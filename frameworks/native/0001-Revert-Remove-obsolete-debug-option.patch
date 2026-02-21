@@ -1,0 +1,68 @@
+From 0aadbc4de24fe12192cc427d5ad335ef2e78394f Mon Sep 17 00:00:00 2001
+From: Rheygine Medel <rmedel@codeaurora.org>
+Date: Thu, 3 Dec 2020 10:56:11 -0800
+Subject: [PATCH] Revert "Remove obsolete debug option"
+
+This reverts commit 2ec5391acfc340c2e195d573cf5a078ff0f280d2.
+
+[ K9100ii - Adds support for disabling backpressure propagation back for
+  improving performance since being removed by Google as an "obsolete
+  debug option" ]
+
+Change-Id: Idc50c30a17bcaf84311d65c9c89f4dcdebc5116a
+CRs-Fixed: 2834061
+---
+ services/surfaceflinger/SurfaceFlinger.cpp | 10 +++++++---
+ services/surfaceflinger/SurfaceFlinger.h   |  1 +
+ 2 files changed, 8 insertions(+), 3 deletions(-)
+
+diff --git a/services/surfaceflinger/SurfaceFlinger.cpp b/services/surfaceflinger/SurfaceFlinger.cpp
+index 96b85d1d6f..7299721f2c 100644
+--- a/services/surfaceflinger/SurfaceFlinger.cpp
++++ b/services/surfaceflinger/SurfaceFlinger.cpp
+@@ -398,6 +398,10 @@ SurfaceFlinger::SurfaceFlinger(Factory& factory) : SurfaceFlinger(factory, SkipI
+     int debugDdms = atoi(value);
+     ALOGI_IF(debugDdms, "DDMS debugging not supported");
+ 
++    property_get("debug.sf.disable_backpressure", value, "0");
++    mPropagateBackpressure = !atoi(value);
++    ALOGI_IF(!mPropagateBackpressure, "Disabling backpressure propagation");
++
+     property_get("debug.sf.enable_gl_backpressure", value, "0");
+     mPropagateBackpressureClientComposition = atoi(value);
+     ALOGI_IF(mPropagateBackpressureClientComposition,
+@@ -2029,8 +2033,8 @@ bool SurfaceFlinger::commit(nsecs_t frameTime, int64_t vsyncId, nsecs_t expected
+     // When Backpressure propagation is enabled we want to give a small grace period
+     // for the present fence to fire instead of just giving up on this frame to handle cases
+     // where present fence is just about to get signaled.
+-    const int graceTimeForPresentFenceMs =
+-            (mPropagateBackpressureClientComposition || !mHadClientComposition) ? 1 : 0;
++    const int graceTimeForPresentFenceMs =  (mPropagateBackpressure &&
++            (mPropagateBackpressureClientComposition || !mHadClientComposition)) ? 1 : 0;
+ 
+     // Pending frames may trigger backpressure propagation.
+     const TracedOrdinal<bool> framePending = {"PrevFramePending",
+@@ -2087,7 +2091,7 @@ bool SurfaceFlinger::commit(nsecs_t frameTime, int64_t vsyncId, nsecs_t expected
+         }
+     }
+ 
+-    if (framePending) {
++    if (framePending && mPropagateBackpressure) {
+         if ((hwcFrameMissed && !gpuFrameMissed) || mPropagateBackpressureClientComposition) {
+             scheduleCommit(FrameHint::kNone);
+             return false;
+diff --git a/services/surfaceflinger/SurfaceFlinger.h b/services/surfaceflinger/SurfaceFlinger.h
+index 41ad635d54..9df4f8ac48 100644
+--- a/services/surfaceflinger/SurfaceFlinger.h
++++ b/services/surfaceflinger/SurfaceFlinger.h
+@@ -1269,6 +1269,7 @@ private:
+     std::atomic_bool mForceFullDamage = false;
+ 
+     bool mLayerCachingEnabled = false;
++    bool mPropagateBackpressure = true;
+     bool mPropagateBackpressureClientComposition = false;
+     sp<SurfaceInterceptor> mInterceptor;
+ 
+-- 
+2.48.1
+
