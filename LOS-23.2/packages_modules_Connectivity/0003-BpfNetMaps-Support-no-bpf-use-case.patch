@@ -1,15 +1,15 @@
-From ebb715797cdd942243c11879f9a64e6da27cf3c7 Mon Sep 17 00:00:00 2001
+From 9d027838bd869854b8e15127b6b7c9eb6a362c8c Mon Sep 17 00:00:00 2001
 From: Dominggoes Isakh <drjisakh@gmail.com>
 Date: Sat, 31 Jan 2026 16:28:01 +0100
 Subject: [PATCH 3/8] BpfNetMaps: Support no bpf use case
 
 Change-Id: I98a0dfead5b329bc1fe0dcc58472c085854036c9
 ---
- .../src/com/android/server/BpfNetMaps.java    | 80 ++++++++++++++++---
- 1 file changed, 71 insertions(+), 9 deletions(-)
+ .../src/com/android/server/BpfNetMaps.java    | 81 ++++++++++++++++---
+ 1 file changed, 72 insertions(+), 9 deletions(-)
 
 diff --git a/service/src/com/android/server/BpfNetMaps.java b/service/src/com/android/server/BpfNetMaps.java
-index a96819380c..c4f844c370 100644
+index a96819380c..4099e8e9db 100644
 --- a/service/src/com/android/server/BpfNetMaps.java
 +++ b/service/src/com/android/server/BpfNetMaps.java
 @@ -115,6 +115,7 @@ public class BpfNetMaps {
@@ -223,7 +223,15 @@ index a96819380c..c4f844c370 100644
          final int ifIndex = mDeps.getIfIndex(iface);
          if (ifIndex == 0) {
              Log.e(TAG, "Failed to get if index, skip setting ingress discard rule for " + address
-@@ -1146,6 +1196,8 @@ public class BpfNetMaps {
+@@ -1131,6 +1181,7 @@ public class BpfNetMaps {
+     @RequiresApi(Build.VERSION_CODES.TIRAMISU)
+     public void removeIngressDiscardRule(final InetAddress address) {
+         throwIfPreT("removeIngressDiscardRule is not available on pre-T devices");
++        if (sIngressDiscardMap == null) return;
+         try {
+             sIngressDiscardMap.deleteEntry(new IngressDiscardKey(address));
+         } catch (ErrnoException e) {
+@@ -1146,6 +1197,8 @@ public class BpfNetMaps {
       */
      @RequiresApi(Build.VERSION_CODES.TIRAMISU)
      public int getUidNetworkingBlockedReasons(final int uid) {
@@ -232,7 +240,7 @@ index a96819380c..c4f844c370 100644
          return BpfNetMapsUtils.getUidNetworkingBlockedReasons(uid,
                  sConfigurationMap, sUidOwnerMap, sDataSaverEnabledMap);
      }
-@@ -1177,6 +1229,8 @@ public class BpfNetMaps {
+@@ -1177,6 +1230,8 @@ public class BpfNetMaps {
       */
      @RequiresApi(Build.VERSION_CODES.TIRAMISU)
      public boolean isUidNetworkingBlocked(final int uid, boolean isNetworkMetered) {
@@ -241,7 +249,7 @@ index a96819380c..c4f844c370 100644
          return BpfNetMapsUtils.isUidNetworkingBlocked(uid, isNetworkMetered,
                  sConfigurationMap, sUidOwnerMap, sDataSaverEnabledMap);
      }
-@@ -1197,7 +1251,9 @@ public class BpfNetMaps {
+@@ -1197,7 +1252,9 @@ public class BpfNetMaps {
          // deletion. netd and skDestroyListener could delete CookieTagMap entry concurrently.
          // So using Set to count the number of entry in the map.
          Set<K> keySet = new ArraySet<>();
@@ -252,7 +260,7 @@ index a96819380c..c4f844c370 100644
          return keySet.size();
      }
  
-@@ -1245,6 +1301,8 @@ public class BpfNetMaps {
+@@ -1245,6 +1302,8 @@ public class BpfNetMaps {
  
      @RequiresApi(Build.VERSION_CODES.TIRAMISU)
      private void dumpOwnerMatchConfig(final IndentingPrintWriter pw) {
@@ -261,7 +269,7 @@ index a96819380c..c4f844c370 100644
          try {
              final long match = sConfigurationMap.getValue(UID_RULES_CONFIGURATION_KEY).val;
              pw.println("current ownerMatch configuration: " + match + " " + matchToString(match));
-@@ -1254,6 +1312,8 @@ public class BpfNetMaps {
+@@ -1254,6 +1313,8 @@ public class BpfNetMaps {
      }
  
      private void dumpCurrentStatsMapConfig(final IndentingPrintWriter pw) {
@@ -270,7 +278,7 @@ index a96819380c..c4f844c370 100644
          try {
              final long config = sConfigurationMap.getValue(CURRENT_STATS_MAP_CONFIGURATION_KEY).val;
              final String currentStatsMap =
-@@ -1265,6 +1325,8 @@ public class BpfNetMaps {
+@@ -1265,6 +1326,8 @@ public class BpfNetMaps {
      }
  
      private void dumpDataSaverConfig(final IndentingPrintWriter pw) {
