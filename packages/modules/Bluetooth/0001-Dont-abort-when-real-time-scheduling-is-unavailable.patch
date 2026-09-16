@@ -1,0 +1,133 @@
+From 33c80651068c80cef28661db7cc98282c531ae17 Mon Sep 17 00:00:00 2001
+From: Flominator <github.flominatorgd@gmail.com>
+Date: Wed, 16 Sep 2026 08:44:19 +0200
+Subject: [PATCH] Don't abort when real-time scheduling is unavailable
+
+On some devices (like the OnePlus 6, and observed here on the Samsung
+Galaxy A3 2017 a3y17lte running LineageOS 20 on its 3.18 kernel), the
+Bluetooth UID may not use real-time priority at all (no CAP_SYS_NICE and
+RLIMIT_RTPRIO == 0), so every attempt to switch to SCHED_FIFO fails with
+EPERM. Scheduling priority is a best-effort latency optimization, not a
+correctness requirement, so don't kill the stack when we don't get it.
+bionic itself silently tolerates the very same failure on 32-bit targets.
+
+That leaves two places where the stack aborts itself on such devices:
+
+1) osi/alarm: timer_create_internal() creates the POSIX timer with a
+   SIGEV_THREAD notification thread that carries explicit SCHED_FIFO
+   (real-time) attributes. Bionic forwards this to pthread_create(),
+   which on 64-bit targets propagates the failure when the process is
+   not allowed to use real-time scheduling. timer_create() then fails,
+   osi lazy_initialize() fails and alarm_new() aborts the whole stack,
+   i.e. the Bluetooth app dies in a restart loop with "Bluetooth keeps
+   stopping" as soon as the stack is started:
+
+     E bt_osi_alarm: ... alarm.cc:683 timer_create_internal unable to
+       create timer with clock 7: Operation not permitted
+     F droid.bluetooth: [FATAL:alarm.cc(170)] Check failed: false.
+
+   Retry the timer creation with default thread attributes when the RT
+   attempt fails, so the stack keeps working on such devices while
+   keeping RT behaviour everywhere else.
+
+2) EnableRealTimeScheduling() callers: the failed
+   sched_setscheduler(SCHED_FIFO) attempt was treated as fatal on
+   Android builds. This fixes gabeldorsche startup:
+
+     F droid.bluetooth: [FATAL:btu_task.cc(125)] main_thread_start_up:
+       unable to enable real time scheduling
+
+   which on a3y17lte kills the stack on the very first BT enable right
+   after the controller comes up. Downgrade those LOG(FATAL) sites to
+   LOG(ERROR) in btu_task.cc, btif_a2dp_sink.cc and btif_a2dp_source.cc,
+   which prevents the same class of crash in the A2DP decoder/encoder
+   threads as soon as Bluetooth audio streams.
+
+Reworked for LineageOS lineage-20.0 from the TrebleDroid patch series
+(treble_build_aosp/patches/trebledroid/platform_packages_modules_Bluetooth/
+0004-Don-t-abort-when-failing-to-get-real-time-priority.patch): context
+adapted and the LOG(FATAL) sites selected with #if defined(OS_ANDROID)
+as in this tree.
+
+Co-authored-by: Pierre-Hugues Husson <phh@phh.me>
+Signed-off-by: Flominator <github.flominatorgd@gmail.com>
+---
+ system/btif/src/btif_a2dp_sink.cc   |  2 +-
+ system/btif/src/btif_a2dp_source.cc |  2 +-
+ system/osi/src/alarm.cc             | 20 ++++++++++++++++++++
+ system/stack/btu/btu_task.cc        |  2 +-
+ 4 files changed, 23 insertions(+), 3 deletions(-)
+
+diff --git a/system/btif/src/btif_a2dp_sink.cc b/system/btif/src/btif_a2dp_sink.cc
+index 9d52524b4b..95a129d2b5 100644
+--- a/system/btif/src/btif_a2dp_sink.cc
++++ b/system/btif/src/btif_a2dp_sink.cc
+@@ -197,7 +197,7 @@ bool btif_a2dp_sink_init() {
+   /* Schedule the rest of the operations */
+   if (!btif_a2dp_sink_cb.worker_thread.EnableRealTimeScheduling()) {
+ #if defined(OS_ANDROID)
+-    LOG(FATAL) << __func__
++    LOG(ERROR) << __func__
+                << ": Failed to increase A2DP decoder thread priority";
+ #endif
+   }
+diff --git a/system/btif/src/btif_a2dp_source.cc b/system/btif/src/btif_a2dp_source.cc
+index 4ca2c8c265..db5ff20444 100644
+--- a/system/btif/src/btif_a2dp_source.cc
++++ b/system/btif/src/btif_a2dp_source.cc
+@@ -365,7 +365,7 @@ static void btif_a2dp_source_startup_delayed() {
+   LOG_INFO("%s: state=%s", __func__, btif_a2dp_source_cb.StateStr().c_str());
+   if (!btif_a2dp_source_thread.EnableRealTimeScheduling()) {
+ #if defined(OS_ANDROID)
+-    LOG(FATAL) << __func__ << ": unable to enable real time scheduling";
++    LOG(ERROR) << __func__ << ": unable to enable real time scheduling";
+ #endif
+   }
+   if (!bluetooth::audio::a2dp::init(&btif_a2dp_source_thread)) {
+diff --git a/system/osi/src/alarm.cc b/system/osi/src/alarm.cc
+index 19baacbd68..fcd372bcb1 100644
+--- a/system/osi/src/alarm.cc
++++ b/system/osi/src/alarm.cc
+@@ -679,6 +679,26 @@ static bool timer_create_internal(const clockid_t clock_id, timer_t* timer) {
+   sigevent.sigev_notify_function = (void (*)(union sigval))timer_callback;
+   sigevent.sigev_notify_attributes = &thread_attr;
+   if (timer_create(clock_id, &sigevent, timer) == -1) {
++    // Bionic implements SIGEV_THREAD timers on top of a pthread created with
++    // the supplied attributes. On 64-bit, pthread_create() propagates the
++    // error when the requested real-time scheduling policy may not be used
++    // (no CAP_SYS_NICE and RLIMIT_RTPRIO == 0, i.e. EPERM), so the timer is
++    // never created, lazy_initialize() fails and alarm_new() CHECK(false)
++    // aborts the entire Bluetooth stack.
++    // Scheduling priority is a best-effort optimization, not a correctness
++    // requirement, so retry with default thread attributes before failing.
++    LOG_WARN("%s unable to create timer with clock %d and RT thread attributes:"
++             " %s. Retrying with default thread attributes.", __func__,
++             clock_id, strerror(errno));
++
++    memset(&sigevent, 0, sizeof(sigevent));
++    sigevent.sigev_notify = SIGEV_THREAD;
++    sigevent.sigev_notify_function = (void (*)(union sigval))timer_callback;
++    sigevent.sigev_notify_attributes = NULL;
++    if (timer_create(clock_id, &sigevent, timer) == 0) {
++      return true;
++    }
++
+     LOG_ERROR("%s unable to create timer with clock %d: %s", __func__, clock_id,
+               strerror(errno));
+     if (clock_id == CLOCK_BOOTTIME_ALARM) {
+diff --git a/system/stack/btu/btu_task.cc b/system/stack/btu/btu_task.cc
+index 5f3260763f..2f937cd3ee 100644
+--- a/system/stack/btu/btu_task.cc
++++ b/system/stack/btu/btu_task.cc
+@@ -122,7 +122,7 @@ void main_thread_start_up() {
+   }
+   if (!main_thread.EnableRealTimeScheduling()) {
+ #if defined(OS_ANDROID)
+-    LOG(FATAL) << __func__ << ": unable to enable real time scheduling";
++    LOG(ERROR) << __func__ << ": unable to enable real time scheduling";
+ #else
+     LOG(ERROR) << __func__ << ": unable to enable real time scheduling";
+ #endif
+-- 
+2.47.3
+
