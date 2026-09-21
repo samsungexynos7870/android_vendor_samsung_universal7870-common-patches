@@ -1,0 +1,3 @@
+# Ignore the manifest tracking file created by apply.sh
+.patches_applied
+
