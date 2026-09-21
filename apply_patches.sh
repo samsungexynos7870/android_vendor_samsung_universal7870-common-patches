@@ -61,7 +61,7 @@ apply_patch() {
     local patch_name=$(basename "$patch_file")
 
     echo -e "  Applying $patch_name ..."
-    if git am --signoff "$patch_file"; then
+    if git am --3way --signoff "$patch_file"; then
         local commit_hash=$(git rev-parse HEAD)
         echo -e "  ${GREEN}Applied as $commit_hash${NC}"
         echo "$project|$patch_name|$commit_hash" >> "$MANIFEST"
