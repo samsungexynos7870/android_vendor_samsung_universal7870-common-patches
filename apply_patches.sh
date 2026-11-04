@@ -1,5 +1,5 @@
 #!/bin/bash
-# Apply LineageOS 22.2 platform patches for Samsung Exynos 7870 (universal7870-common).
+# Apply LineageOS 24.0 platform patches for Samsung Exynos 7870 (universal7870-common).
 # Invoked automatically by device/samsung/universal7870-common/vendorsetup.sh
 # or manually from anywhere inside the Android repo tree:
 #   ./vendor/samsung/universal7870-common-patches/apply_patches.sh [--revert] [--export]
@@ -141,4 +141,4 @@ for patch_dir in "${PATCH_DIRS[@]}"; do
     apply_patch_dir "$patch_dir"
 done
 
-echo -e "${GREEN}All universal7870-common LineageOS 22.2 patches applied successfully.${NC}"
+echo -e "${GREEN}All universal7870-common LineageOS 24.0 patches applied successfully.${NC}"

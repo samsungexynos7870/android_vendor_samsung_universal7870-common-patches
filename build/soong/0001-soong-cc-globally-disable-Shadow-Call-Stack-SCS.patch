@@ -1,4 +1,4 @@
-From 9a4ffc7bb83a808da47acffdaefe5f4846a0e661 Mon Sep 17 00:00:00 2001
+From b53f0296ea03d15bb6a1acdc5c293cbaf35eb271 Mon Sep 17 00:00:00 2001
 From: Flominator <github.flominatorgd@gmail.com>
 Date: Fri, 23 Oct 2026 13:12:12 +0000
 Subject: [PATCH] soong: cc: globally disable Shadow Call Stack (SCS)
@@ -19,10 +19,10 @@ Signed-off-by: Flominator <github.flominatorgd@gmail.com>
  1 file changed, 3 insertions(+), 4 deletions(-)
 
 diff --git a/cc/sanitize.go b/cc/sanitize.go
-index d8d8c7a..9b20f87 100644
+index 57cadd06f74fa44bf987f2274f0fafab662d734b..a3522338da1a5017ce943a56c4c3bd7d39913296 100644
 --- a/cc/sanitize.go
 +++ b/cc/sanitize.go
-@@ -640,10 +640,9 @@ func (sanitize *sanitize) begin(ctx BaseModuleContext) {
+@@ -641,10 +641,9 @@ func (sanitize *sanitize) begin(ctx BaseModuleContext) {
  		s.Hwaddress = nil
  	}
  
@@ -36,6 +36,3 @@ index d8d8c7a..9b20f87 100644
  
  	// Memtag_heap is only implemented on AArch64.
  	// Memtag ABI is Android specific for now, so disable for host.
--- 
-2.47.3
-
