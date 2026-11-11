@@ -1,61 +1,38 @@
-From 7305abd7715874078ba5da664033e0c554284e69 Mon Sep 17 00:00:00 2001
+From 633d4e5d5810503ad94a81fc41de616cc17d2f5d Mon Sep 17 00:00:00 2001
 From: Flominator <github.flominatorgd@gmail.com>
-Date: Wed, 11 Nov 2026 20:52:13 +0000
+Date: Wed, 11 Nov 2026 21:53:01 +0000
 Subject: [PATCH] kernel: restore GCC build support for legacy devices
 
-Adapt the GCC support revert by Dominggoes Isakh from rINanDO/galaxys7-patches LOS-24.0. Preserve the clang RBE wrapper and current build configuration.
+Adapt the GCC support revert by Dominggoes Isakh from rINanDO/galaxys7-patches LOS-24.0. Preserve each branch clang compiler wrapper and existing settings.
 
 Signed-off-by: Flominator <github.flominatorgd@gmail.com>
 ---
- build/tasks/kernel.mk       |  26 ++++---
+ build/tasks/kernel.mk       |   7 ++
  config/BoardConfigKernel.mk | 134 +++++++++++++++++++++++++++++++++---
- 2 files changed, 142 insertions(+), 18 deletions(-)
+ 2 files changed, 133 insertions(+), 8 deletions(-)
 
 diff --git a/build/tasks/kernel.mk b/build/tasks/kernel.mk
-index bc9fd151..f1be9041 100644
+index f081f79..47585b4 100644
 --- a/build/tasks/kernel.mk
 +++ b/build/tasks/kernel.mk
-@@ -254,17 +254,23 @@ endif
- ifeq ($(FULL_KERNEL_BUILD),true)
- # Add host bin out dir to path
+@@ -256,2 +256,3 @@ ifeq ($(FULL_KERNEL_BUILD),true)
  PATH_OVERRIDE := PATH=$(KERNEL_BUILD_OUT_PREFIX)$(HOST_OUT_EXECUTABLES):$$PATH
--ifeq ($(KERNEL_ARCH),arm64)
--    KERNEL_CLANG_TRIPLE ?= CLANG_TRIPLE=aarch64-linux-gnu-
--else ifeq ($(KERNEL_ARCH),arm)
--    KERNEL_CLANG_TRIPLE ?= CLANG_TRIPLE=arm-linux-gnu-
--else ifeq ($(KERNEL_ARCH),x86)
--    KERNEL_CLANG_TRIPLE ?= CLANG_TRIPLE=x86_64-linux-gnu-
 +ifneq ($(TARGET_KERNEL_CLANG_COMPILE),false)
-+    ifeq ($(KERNEL_ARCH),arm64)
-+        KERNEL_CLANG_TRIPLE ?= CLANG_TRIPLE=aarch64-linux-gnu-
-+    else ifeq ($(KERNEL_ARCH),arm)
-+        KERNEL_CLANG_TRIPLE ?= CLANG_TRIPLE=arm-linux-gnu-
-+    else ifeq ($(KERNEL_ARCH),x86)
-+        KERNEL_CLANG_TRIPLE ?= CLANG_TRIPLE=x86_64-linux-gnu-
-+    endif
-+    PATH_OVERRIDE += LD_LIBRARY_PATH=$(TARGET_KERNEL_CLANG_PATH)/lib64:$$LD_LIBRARY_PATH
-+    PATH_OVERRIDE += PATH=$(TARGET_KERNEL_CLANG_PATH)/bin:$$PATH
-+    ifeq ($(KERNEL_CC),)
-+        KERNEL_CC := CC="$(KERNEL_CC_WRAPPER) clang" LD=ld.lld
-+    endif
- endif
--PATH_OVERRIDE += LD_LIBRARY_PATH=$(TARGET_KERNEL_CLANG_PATH)/lib64:$$LD_LIBRARY_PATH
--PATH_OVERRIDE += PATH=$(TARGET_KERNEL_CLANG_PATH)/bin:$$PATH
--ifeq ($(KERNEL_CC),)
--    KERNEL_CC := CC="$(KERNEL_CC_WRAPPER) clang" LD=ld.lld
+ ifeq ($(KERNEL_ARCH),arm64)
+@@ -269,2 +270,8 @@ endif
+ 
++endif # TARGET_KERNEL_CLANG_COMPILE
 +
 +ifneq ($(KERNEL_NO_GCC), true)
 +    PATH_OVERRIDE += PATH=$(KERNEL_TOOLCHAIN_PATH_gcc):$$PATH
- endif
- 
++endif
++
  # System tools are no longer allowed on 10+
 diff --git a/config/BoardConfigKernel.mk b/config/BoardConfigKernel.mk
-index 66f10f03..71ffd1b7 100644
+index e47be97..79af1cc 100644
 --- a/config/BoardConfigKernel.mk
 +++ b/config/BoardConfigKernel.mk
-@@ -21,7 +21,12 @@
- #   TARGET_KERNEL_SOURCE               = Kernel source dir, optional, defaults
- #                                          to kernel/$(TARGET_DEVICE_DIR)
+@@ -23,3 +23,8 @@
  #   TARGET_KERNEL_ARCH                 = Kernel Arch
 +#   TARGET_KERNEL_CROSS_COMPILE_PREFIX = Compiler prefix (e.g. arm-eabi-)
 +#                                          defaults to arm-linux-androidkernel- for arm
@@ -64,22 +41,14 @@ index 66f10f03..71ffd1b7 100644
  #
 +#   TARGET_KERNEL_CLANG_COMPILE        = Compile kernel with clang, defaults to true
  #   TARGET_KERNEL_CLANG_VERSION        = Clang prebuilts version, optional, defaults to clang-stable
- #   TARGET_KERNEL_CLANG_PATH           = Clang prebuilts path, optional
- #   TARGET_KERNEL_LIBCLANG_PATH        = libclang (used by rust bindgen) path, optional,
-@@ -29,7 +34,10 @@
- #
- #   TARGET_KERNEL_LIBC_SYSROOT_USE     = libc sysroot to use, defaults to "host" for 6.11+
+@@ -31,3 +36,6 @@
  #
 +#   TARGET_KERNEL_LLVM_BINUTILS        = Use LLVM binutils, defaults to true
  #   TARGET_KERNEL_RUST_VERSION         = Rust prebuilts version, optional
 +#   TARGET_KERNEL_NO_GCC               = Fully compile the kernel without GCC.
 +#                                        Defaults to false
  #   TARGET_KERNEL_VERSION              = Reported kernel version in top level kernel
- #                                        makefile. Can be overriden in device trees
- #                                        in the event of prebuilt kernel.
-@@ -78,6 +86,13 @@ KERNEL_VERSION := $(shell grep -s "^VERSION = " $(TARGET_KERNEL_SOURCE)/Makefile
- KERNEL_PATCHLEVEL := $(shell grep -s "^PATCHLEVEL = " $(TARGET_KERNEL_SOURCE)/Makefile | awk '{ print $$3 }')
- TARGET_KERNEL_VERSION ?= $(shell echo $(KERNEL_VERSION)"."$(KERNEL_PATCHLEVEL))
+@@ -79,2 +87,9 @@ TARGET_KERNEL_VERSION ?= $(shell echo $(KERNEL_VERSION)"."$(KERNEL_PATCHLEVEL))
  
 +# 5.10+ can fully compile without GCC by default
 +ifneq ($(KERNEL_VERSION),)
@@ -89,22 +58,14 @@ index 66f10f03..71ffd1b7 100644
 +endif
 +
  # 6.11+ can no longer use aosp glibc sysroot headers (too old)
- ifneq ($(KERNEL_VERSION),)
-     ifeq ($(call is-version-greater-or-equal,$(TARGET_KERNEL_VERSION),6.11),true)
-@@ -85,6 +100,10 @@ ifneq ($(KERNEL_VERSION),)
-     endif
- endif
+@@ -86,2 +101,6 @@ endif
  
 +ifeq ($(TARGET_KERNEL_NO_GCC), true)
 +    KERNEL_NO_GCC := true
 +endif
 +
  ifneq ($(TARGET_KERNEL_CLANG_VERSION),)
-     KERNEL_CLANG_VERSION := clang-$(TARGET_KERNEL_CLANG_VERSION)
- else
-@@ -153,16 +172,111 @@ KERNEL_MAKE_FLAGS += -j$(shell getconf _NPROCESSORS_ONLN)
- TOOLS_PATH_OVERRIDE := \
-     HIP_PATH=none PERL5LIB=$(BUILD_TOP)/prebuilts/tools-lineage/common/perl-base
+@@ -130,12 +149,107 @@ TOOLS_PATH_OVERRIDE := \
  
 -ifeq ($(TARGET_KERNEL_LIBC_SYSROOT_USE), host)
 -    KERNEL_HOST_C_LD_FLAGS_SYSROOT :=
@@ -219,11 +180,7 @@ index 66f10f03..71ffd1b7 100644
 +    TOOLS_PATH_OVERRIDE += PATH=$(BUILD_TOP)/prebuilts/tools-lineage/$(HOST_PREBUILT_TAG)/bin:$(BUILD_TOP)/prebuilts/build-tools/$(HOST_PREBUILT_TAG)/bin:$(TARGET_KERNEL_CLANG_PATH)/bin:$(BUILD_TOP)/prebuilts/rust-toolchain/$(HOST_PREBUILT_TAG)/$(TARGET_KERNEL_RUST_VERSION)/bin:$(BUILD_TOP)/prebuilts/clang-tools/$(HOST_PREBUILT_TAG)/bin:$$PATH
 +endif
  
- # Set DTBO image locations so the build system knows to build them
- ifneq (,$(filter true, $(TARGET_NEEDS_DTBOIMAGE) $(BOARD_KERNEL_SEPARATED_DTBO)))
-@@ -182,7 +296,11 @@ TARGET_KERNEL_EXT_MODULES ?=
- KERNEL_MAKE_CMD := $(BUILD_TOP)/prebuilts/build-tools/$(HOST_PREBUILT_TAG)/bin/make
- 
+@@ -159,3 +273,7 @@ KERNEL_MAKE_CMD := $(BUILD_TOP)/prebuilts/build-tools/$(HOST_PREBUILT_TAG)/bin/m
  # Use LLVM's substitutes for GNU binutils
 -KERNEL_MAKE_FLAGS += LLVM=1 LLVM_IAS=1
 +ifneq ($(TARGET_KERNEL_CLANG_COMPILE), false)
@@ -232,8 +189,6 @@ index 66f10f03..71ffd1b7 100644
 +    endif
 +endif
  
- # Pass prebuilt LZ4 path
- KERNEL_MAKE_FLAGS += LZ4=$(BUILD_TOP)/prebuilts/kernel-build-tools/linux-x86/bin/lz4
 -- 
 2.47.3
 
