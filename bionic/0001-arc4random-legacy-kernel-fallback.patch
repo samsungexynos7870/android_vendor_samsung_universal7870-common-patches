@@ -1,0 +1,53 @@
+From 93a0f631ce477eb958e796851f30a54470bd7619 Mon Sep 17 00:00:00 2001
+From: Flominator <github.flominatorgd@gmail.com>
+Date: Thu, 12 Nov 2026 00:47:02 +0000
+Subject: [PATCH] arc4random: support kernels without MADV_WIPEONFORK
+
+On older kernels the wipe-on-fork madvise returns EINVAL. Permit that case while restoring PID-based fork detection, so the child is forced to reseed before producing random output. Keep other madvise failures fatal. This follows the legacy fork-detection approach used in lineage-22.2.
+
+Signed-off-by: Flominator <github.flominatorgd@gmail.com>
+---
+ libc/upstream-openbsd/android/include/arc4random.h | 13 +++++++++++--
+ 1 file changed, 11 insertions(+), 2 deletions(-)
+
+diff --git a/libc/upstream-openbsd/android/include/arc4random.h b/libc/upstream-openbsd/android/include/arc4random.h
+index 1940398..753f671 100644
+--- a/libc/upstream-openbsd/android/include/arc4random.h
++++ b/libc/upstream-openbsd/android/include/arc4random.h
+@@ -18,6 +18,7 @@
+  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+  */
+ 
++#include <errno.h>
+ #include <pthread.h>
+ #include <sys/mman.h>
+ #include <sys/prctl.h>
+@@ -42,7 +43,15 @@ static inline void _getentropy_fail(void) {
+ }
+ 
+ static inline void _rs_forkdetect(void) {
+-  // Not needed thanks to the MADV_WIPEONFORK below.
++  // Older kernels cannot wipe this mapping at fork. Detect the new process
++  // under the arc4random lock and force a fresh getentropy-based stir before
++  // producing any output, as the legacy implementation did.
++  static pid_t last_pid;
++  pid_t pid = getpid();
++  if (last_pid != pid) {
++    last_pid = pid;
++    if (rs != NULL) memset(rs, 0, sizeof(*rs));
++  }
+ }
+ 
+ static inline int _rs_allocate(struct _rs** rsp, struct _rsx** rsxp) {
+@@ -60,7 +69,7 @@ static inline int _rs_allocate(struct _rs** rsp, struct _rsx** rsxp) {
+   }
+ 
+   // Equivalent to OpenBSD's minherit(MAP_INHERIT_ZERO).
+-  if (madvise(p, size, MADV_WIPEONFORK) == -1) {
++  if (madvise(p, size, MADV_WIPEONFORK) == -1 && errno != EINVAL) {
+     async_safe_fatal("arc4random data MADV_WIPEONFORK failed: %m");
+   }
+ 
+-- 
+2.47.3
+
