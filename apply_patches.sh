@@ -59,6 +59,7 @@ REPO_ROOT=$(find_repo_root)
 
 # Patch directory (relative to this repo) -> Android source path
 PATCH_DIRS=(
+    "bionic"
     "build/soong"
     "vendor/lineage"
     "packages/modules/Bluetooth"
