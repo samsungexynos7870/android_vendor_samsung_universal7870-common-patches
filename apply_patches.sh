@@ -61,8 +61,15 @@ REPO_ROOT=$(find_repo_root)
 PATCH_DIRS=(
     "bionic"
     "build/soong"
-    "vendor/lineage"
+    "frameworks/base"
     "packages/modules/Bluetooth"
+    "system/core"
+    "system/memory/lmkd"
+    "system/netd"
+    "system/security"
+    "system/sepolicy"
+    "system/zygote"
+    "vendor/lineage"
 )
 
 extract_subject() {
@@ -71,7 +78,7 @@ import email, re, sys
 with open(sys.argv[1], "rb") as f:
     msg = email.message_from_binary_file(f)
 subj = msg.get("Subject", "")
-subj = " ".join(subj.splitlines())
+subj = " ".join(subj.split())
 subj = re.sub(r"^\[PATCH[^\]]*\]\s*", "", subj).strip()
 print(subj)
 PY
